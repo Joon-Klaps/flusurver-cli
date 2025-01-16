@@ -1,0 +1,6 @@
+Protein	Mutation	Effect	Structure Link	Drug Warning
+P1	P100S	green	N/A	N/A
+P1	P154S	orange	N/A	N/A
+S2	S220T	green	N/A	N/A
+D2	D239G	red	N/A	
+I3	I338V	green	N/A	N/A
