@@ -1,0 +1,12 @@
+Query	Protein	subtype	drugname	sensitivity	degree of inhibition
+NA_H1N1_Human_2009_SingaporeGN285 gi|289656858|gb|ADD14204.1|	NA	H1N1pdm	laninamivir	sensitive	NI
+NA_H1N1_Human_2009_SingaporeGN285 gi|289656858|gb|ADD14204.1|	NA	H1N1pdm	oseltamivir	resistant	HRI
+NA_H1N1_Human_2009_SingaporeGN285 gi|289656858|gb|ADD14204.1|	NA	H1N1pdm	zanamivir	sensitive	NI
+NA_H1N1_Human_2009_SingaporeGN285 gi|289656858|gb|ADD14204.1|	NA	H1N1pdm	peramivir	resistant	RI/HRI
+
+Counts of Individual Drug Sensitivity by subtype
+Protein	subtype	drugname	sensitivity	count
+NA	H1N1pdm	zanamivir	sensitive	1
+NA	H1N1pdm	peramivir	resistant	1
+NA	H1N1pdm	laninamivir	sensitive	1
+NA	H1N1pdm	oseltamivir	resistant	1

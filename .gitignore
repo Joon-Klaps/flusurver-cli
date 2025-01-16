@@ -4,3 +4,5 @@
 *.pyo
 __pycache__
 .pytest_cache
+response.html
+.vscode

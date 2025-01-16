@@ -1,30 +1,34 @@
-# README.md
-
-# Python Project
+# FluSurver CLI
 
 ## Overview
-This project is a Python application designed to demonstrate the structure and organization of a Python project. It includes a main application file, unit tests, and necessary configuration files.
+FluSurver CLI is a command-line interface tool for submitting and analyzing influenza sequences using the FluSurver web service (https://flusurver.bii.a-star.edu.sg).
 
 ## Installation
-To install the required dependencies, run the following command:
 
+It's not on pypi
 ```
-pip install -r requirements.txt
-```
-
-## Usage
-To run the application, execute the following command:
-
-```
-python src/main.py
+pip install git+https://github.com/Joon-Klaps/flusurver-cli.git#egg=flusurver-cli
 ```
 
-## Running Tests
-To run the unit tests, use the following command:
-
-```
-python -m unittest discover -s tests
+## Basic Command
+```bash
+flusurver submit -f <sequence_file> -o <output_dir>
 ```
 
-## Contribution
-Contributions are welcome! Please feel free to submit a pull request or open an issue for any suggestions or improvements.
+### Available Options
+```bash
+$ flusurver submit --help
+```
+![alt text](docs/cli.png)
+
+### Example
+```bash
+flusurver submit -f sequences.fasta -o results
+```
+
+## Output
+The tool generates several report files in the specified output directory:
+- `mutation_report`: Detailed mutation analysis
+- `query_summary`: Summary of the query results
+- `clade_call`: Clade classification results
+- `drug_sensitivity`: Drug sensitivity analysis

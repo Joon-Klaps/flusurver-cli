@@ -1,69 +1,65 @@
-import click
+import rich_click as click
 import requests
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
 from typing import List, Optional
 import csv
 from pathlib import Path
-
-@dataclass
-class Mutation:
-    name: str
-    color: str
-    protein: str
-    structure_link: Optional[str] = None
+import re
 
 class HTMLResponse:
     def __init__(self, html_content: str):
         self.soup = BeautifulSoup(html_content, 'html.parser')
-        self.mutations = self._parse_mutations()
-        self.drug_warnings = self._parse_drug_sensitivity()
+        self.base_url = "https://flusurver.bii.a-star.edu.sg"
+        self.report_links = self._parse_report_links()
 
-    def _parse_mutations(self) -> List[Mutation]:
-        mutations = []
-        for link in self.soup.find_all('a', href=True):
-            if 'javascript:' in link.get('href', ''):
-                font_tag = link.find('font')
-                if font_tag and font_tag.b:
-                    color = font_tag.get('color', '')
-                    mutation_text = font_tag.b.text
-                    protein = mutation_text.split('_')[0] if '_' in mutation_text else mutation_text[:2]
+    def _parse_report_links(self):
+        links = {}
+        descriptions = {
+            'mutation_report': 'detailed mutation report',
+            'query_summary': 'query summary report',
+            'clade_call': 'query to clade call',
+            'drug_sensitivity': 'drug sensitivity summary report'
+        }
 
-                    parent_td = link.find_parent('td')
-                    structure_link = None
-                    if parent_td:
-                        next_a = parent_td.find('a', string='show in structure')
-                        if next_a and 'onClick' in next_a.attrs:
-                            structure_link = next_a['onClick']
+        for a in self.soup.find_all('a', href=True):
+            href = a.get('href', '')
+            if any(ext in href for ext in ['.txt', '.csv', '.tsv']):
+                for key, desc in descriptions.items():
+                    if desc.lower() in str(a.parent).lower():
+                        # Clean up the href path
+                        clean_href = re.sub(r'^\.\./?', '', href)
+                        links[key] = {
+                            'url': f"{self.base_url}/{clean_href}",
+                            'description': desc
+                        }
 
-                    mutations.append(Mutation(
-                        name=mutation_text,
-                        color=color,
-                        protein=protein,
-                        structure_link=structure_link
-                    ))
-        return mutations
+        # Check for missing reports
+        missing_reports = set(descriptions.keys()) - set(links.keys())
+        if missing_reports:
+            click.secho(f"✗ Warning: Missing reports: {', '.join(missing_reports)}", fg='yellow', bold=True)
+        return links
 
-    def _parse_drug_sensitivity(self) -> List[str]:
-        warnings = []
-        for font in self.soup.find_all('font', color='red'):
-            if "Reduced sensitivity or resistance" in font.text:
-                warnings.append(font.text.strip())
-        return warnings
+    def download_reports(self, output_dir: Path):
+        results = {}
+        for report_type, link_info in self.report_links.items():
+            try:
+                response = requests.get(link_info['url'])
+                response.raise_for_status()
 
-    def to_tsv(self, output_path: Path):
-        with open(output_path, 'w', newline='') as f:
-            writer = csv.writer(f, delimiter='\t')
-            writer.writerow(['Protein', 'Mutation', 'Effect', 'Structure Link', 'Drug Warning'])
+                # Create output filename based on report type
+                output_file = output_dir / f"{report_type}.{link_info['url'].split('.')[-1]}"
+                output_file.write_text(response.text)
+                results[report_type] = {'success': True, 'path': output_file}
 
-            for mutation in self.mutations:
-                writer.writerow([
-                    mutation.protein,
-                    mutation.name,
-                    mutation.color,
-                    mutation.structure_link or 'N/A',
-                    '; '.join(self.drug_warnings) if mutation.color == 'red' else 'N/A'
-                ])
+            except requests.exceptions.RequestException:
+                results[report_type] = {
+                    'success': False,
+                    'url': link_info['url'],
+                    'description': link_info['description']
+                }
+
+        return results
 
 @click.group()
 def cli():
@@ -77,60 +73,71 @@ def cli():
               help='Force reference option (default: autorefall)')
 @click.option('--lclq', '-l', default=1, type=int,
               help='Local quality setting (default: 1)')
-@click.option('--output', '-o', type=click.Path(), default='mutations.tsv',
-              help='Output TSV file path (default: mutations.tsv)')
-def submit(seqfile, forceref, lclq, output):
+@click.option('--debug', '-d', default=False, is_flag=True,  type=bool,
+                help='Enable debug mode')
+@click.option('--output-dir', '-o', type=click.Path(), default='reports',
+              help='Output directory for reports (default: reports)')
+def submit(seqfile, forceref, lclq, debug, output_dir):
     """Submit sequence data for analysis and save results."""
     url = "https://flusurver.bii.a-star.edu.sg/cgi-bin/flumapBlast3.pl"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True, parents=True)
 
     try:
         with open(seqfile, 'r') as f:
             sequence_data = f.read().strip()
+
+        # Count sequences
+        sequence_count = sequence_data.count('>')
+        click.echo(f"Found {sequence_count} sequence{'s' if sequence_count != 1 else ''} in input file")
+
+        form_data = {
+            'seq': sequence_data,
+            'forceref': forceref,
+            'lclq': str(lclq),
+            'Submit': 'Submit'
+        }
+
+        files = {
+            'seqfile': (seqfile, open(seqfile, 'rb'))
+        }
+
+        click.echo(f"Sending request to {url}...")
+        click.echo("Request parameters:")
+        click.echo(f"  Force reference: {forceref}")
+        click.echo(f"  Local quality: {lclq}")
+
+        try:
+            response = requests.post(url, data=form_data, files=files)
+            response.raise_for_status()
+            click.echo("Request successful!")
+
+            # Parse response and save results
+            html_response = HTMLResponse(response.text)
+            if debug:
+                open(output_dir / 'response.html', 'w').write(response.text)
+
+            # Download and save report files
+            results = html_response.download_reports(output_dir)
+            if debug:
+                click.echo(results)
+
+            click.echo("\nResults:")
+            for report_type, result in results.items():
+                if result['success']:
+                    click.secho(f"✓ {report_type}: Saved to {result['path']}", fg='green')
+                else:
+                    click.secho(f"✗ {report_type}: Could not download. Available at:", fg='red')
+                    click.secho(f"  URL: {result['url']}", fg='red')
+                    click.secho(f"  Description: {result['description']}", fg='red')
+
+        except requests.exceptions.RequestException as e:
+            click.echo(f"Error making request: {e}", err=True)
     except IOError as e:
         click.echo(f"Error reading file: {e}", err=True)
-        return
-
-    form_data = {
-        'seq': sequence_data,
-        'forceref': forceref,
-        'lclq': str(lclq),
-        'Submit': 'Submit'
-    }
-
-    files = {
-        'seqfile': (seqfile, open(seqfile, 'rb'))
-    }
-
-    try:
-        response = requests.post(url, data=form_data, files=files)
-        response.raise_for_status()
-
-        # Parse response and save results
-        html_response = HTMLResponse(response.text)
-        output_path = Path(output)
-        html_response.to_tsv(output_path)
-
-        click.echo(f"Analysis complete. Results saved to {output_path}")
-
-        # Print summary
-        for mutation in html_response.mutations:
-            color = {
-                'red': 'HIGH RISK',
-                'orange': 'MEDIUM RISK',
-                'green': 'LOW RISK'
-            }.get(mutation.color, 'UNKNOWN')
-
-            click.echo(f"{mutation.name}: {color}")
-
-        if html_response.drug_warnings:
-            click.echo("\nWARNINGS:")
-            for warning in html_response.drug_warnings:
-                click.echo(click.style(warning, fg="red"))
-
-    except requests.exceptions.RequestException as e:
-        click.echo(f"Error making request: {e}", err=True)
     finally:
-        files['seqfile'][1].close()
+        if 'files' in locals() and 'seqfile' in files:
+            files['seqfile'][1].close()
 
 if __name__ == '__main__':
     cli()
